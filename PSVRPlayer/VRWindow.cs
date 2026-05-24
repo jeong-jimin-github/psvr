@@ -127,7 +127,7 @@ public sealed class VRWindow : IDisposable
     private unsafe (int idx, int x, int y, int w, int h) PickMonitor()
     {
         GLFW.Init();
-        var monitors = GLFW.GetMonitors(out int count);
+        var monitors = GLFW.GetMonitorsRaw(out int count);
 
         // Use user-specified index if valid
         int chosen = PreferredMonitorIndex >= 0 && PreferredMonitorIndex < count

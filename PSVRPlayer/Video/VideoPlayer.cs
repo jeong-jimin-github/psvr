@@ -80,7 +80,7 @@ public sealed class VideoPlayer : IDisposable
     // ── LibVLC callbacks ─────────────────────────────────────────────────
 
     private uint OnVideoFormat(ref IntPtr opaque, IntPtr chroma,
-        ref uint width, ref uint height, IntPtr pitches, IntPtr lines)
+        ref uint width, ref uint height, ref uint pitches, ref uint lines)
     {
         Width  = (int)width;
         Height = (int)height;
@@ -89,14 +89,13 @@ public sealed class VideoPlayer : IDisposable
         var chromaBytes = "RGBA"u8.ToArray();
         Marshal.Copy(chromaBytes, 0, chroma, 4);
 
-        int stride = (int)width * 4;
-        Marshal.WriteInt32(pitches, stride);
-        Marshal.WriteInt32(lines,  (int)height);
+        pitches = width * 4;
+        lines   = height;
 
         lock (_frameLock)
         {
             if (_gcHandle.IsAllocated) _gcHandle.Free();
-            _writeBuffer = new byte[stride * (int)height];
+            _writeBuffer = new byte[pitches * height];
             _readBuffer  = new byte[_writeBuffer.Length];
             _gcHandle = GCHandle.Alloc(_writeBuffer, GCHandleType.Pinned);
         }
