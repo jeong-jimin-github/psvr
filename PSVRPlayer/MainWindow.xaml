@@ -1,0 +1,263 @@
+<Window x:Class="PSVRPlayer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PSVR PC Video Player" Height="820" Width="520"
+        Background="{StaticResource Bg}"
+        Foreground="{StaticResource Text}"
+        FontFamily="Segoe UI" FontSize="13"
+        ResizeMode="CanMinimize">
+
+    <Window.Resources>
+        <Style x:Key="Panel" TargetType="Border">
+            <Setter Property="Background"     Value="{StaticResource Surface2}"/>
+            <Setter Property="BorderBrush"    Value="{StaticResource Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"   Value="8"/>
+            <Setter Property="Padding"        Value="12"/>
+            <Setter Property="Margin"         Value="0,0,0,10"/>
+        </Style>
+        <Style x:Key="PanelTitle" TargetType="TextBlock">
+            <Setter Property="FontSize"       Value="10"/>
+            <Setter Property="FontWeight"     Value="SemiBold"/>
+            <Setter Property="Foreground"     Value="{StaticResource TextDim}"/>
+            <Setter Property="Margin"         Value="0,0,0,8"/>
+        </Style>
+        <Style x:Key="Label" TargetType="TextBlock">
+            <Setter Property="FontSize"       Value="11"/>
+            <Setter Property="Foreground"     Value="{StaticResource TextDim}"/>
+            <Setter Property="Margin"         Value="0,0,0,3"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background"     Value="{StaticResource Bg}"/>
+            <Setter Property="Foreground"     Value="{StaticResource Text}"/>
+            <Setter Property="BorderBrush"    Value="{StaticResource Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding"        Value="7,5"/>
+            <Setter Property="FontSize"       Value="12"/>
+        </Style>
+        <Style TargetType="PasswordBox">
+            <Setter Property="Background"     Value="{StaticResource Bg}"/>
+            <Setter Property="Foreground"     Value="{StaticResource Text}"/>
+            <Setter Property="BorderBrush"    Value="{StaticResource Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding"        Value="7,5"/>
+            <Setter Property="FontSize"       Value="12"/>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Background"     Value="{StaticResource Bg}"/>
+            <Setter Property="Foreground"     Value="{StaticResource Text}"/>
+            <Setter Property="BorderBrush"    Value="{StaticResource Border}"/>
+            <Setter Property="Padding"        Value="7,5"/>
+            <Setter Property="FontSize"       Value="12"/>
+        </Style>
+        <Style x:Key="Btn" TargetType="Button">
+            <Setter Property="Background"     Value="{StaticResource Accent}"/>
+            <Setter Property="Foreground"     Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding"        Value="14,7"/>
+            <Setter Property="FontSize"       Value="12"/>
+            <Setter Property="Cursor"         Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="5" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="BtnSec" TargetType="Button" BasedOn="{StaticResource Btn}">
+            <Setter Property="Background" Value="{StaticResource Border}"/>
+            <Setter Property="Foreground" Value="{StaticResource Text}"/>
+        </Style>
+        <Style x:Key="BtnDanger" TargetType="Button" BasedOn="{StaticResource Btn}">
+            <Setter Property="Background" Value="{StaticResource Red}"/>
+        </Style>
+    </Window.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="14">
+
+            <!-- Title bar -->
+            <DockPanel Margin="0,0,0,14">
+                <TextBlock Text="PSVR Video Player" FontSize="18" FontWeight="Bold"
+                           Foreground="{StaticResource Text}"/>
+                <Border DockPanel.Dock="Right" Background="{StaticResource Accent}"
+                        CornerRadius="99" Padding="8,2">
+                    <TextBlock Text="PC Native" FontSize="10" Foreground="White"/>
+                </Border>
+            </DockPanel>
+
+            <!-- ── PSVR ────────────────────────────────────────── -->
+            <Border Style="{StaticResource Panel}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource PanelTitle}" Text="PSVR接続"/>
+
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Ellipse x:Name="PSVRDot" Width="8" Height="8" Fill="{StaticResource TextDim}" Margin="0,0,8,0"/>
+                            <TextBlock x:Name="PSVRStatus" Text="未接続" Foreground="{StaticResource TextDim}" FontSize="12"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" x:Name="PSVRConnectBtn" Content="接続" Style="{StaticResource Btn}"
+                                Margin="8,0,4,0" Click="PSVRConnect_Click" Padding="12,6"/>
+                        <Button Grid.Column="2" x:Name="PSVRDisconnectBtn" Content="切断" Style="{StaticResource BtnSec}"
+                                Click="PSVRDisconnect_Click" Padding="12,6" IsEnabled="False"/>
+                    </Grid>
+
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="EnterVRBtn" Content="VRモード開始" Style="{StaticResource Btn}"
+                                Click="EnterVR_Click" IsEnabled="False" Padding="12,6"/>
+                        <Button Grid.Column="1" x:Name="ExitVRBtn" Content="シネマへ" Style="{StaticResource BtnSec}"
+                                Click="ExitVR_Click" IsEnabled="False" Margin="8,0,4,0" Padding="12,6"/>
+                        <Button Grid.Column="2" x:Name="RecenterBtn" Content="センター" Style="{StaticResource BtnSec}"
+                                Click="Recenter_Click" IsEnabled="False" Padding="12,6"/>
+                    </Grid>
+
+                    <TextBlock Style="{StaticResource Label}" Text="VRウィンドウ表示モニター (0=プライマリ, -1=自動)"/>
+                    <TextBox x:Name="MonitorIndexBox" Text="-1" Width="60" HorizontalAlignment="Left"/>
+                </StackPanel>
+            </Border>
+
+            <!-- ── 動画ファイル ───────────────────────────────── -->
+            <Border Style="{StaticResource Panel}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource PanelTitle}" Text="動画ファイル"/>
+
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="VideoPathBox" IsReadOnly="True" Text="(未選択)"
+                                 Foreground="{StaticResource TextDim}" Background="{StaticResource Bg}"/>
+                        <Button Grid.Column="1" Content="開く" Style="{StaticResource BtnSec}"
+                                Margin="6,0,0,0" Padding="12,6" Click="VideoBrowse_Click"/>
+                    </Grid>
+
+                    <TextBlock Style="{StaticResource Label}" Text="映像フォーマット"/>
+                    <ComboBox x:Name="FormatBox" SelectionChanged="Format_Changed">
+                        <ComboBoxItem Content="360° Mono (等長方形)"  Tag="mono360" IsSelected="True"/>
+                        <ComboBoxItem Content="360° SBS (左右分割ステレオ)" Tag="sbs360"/>
+                        <ComboBoxItem Content="360° TB  (上下分割ステレオ)" Tag="tb360"/>
+                        <ComboBoxItem Content="180° Mono"                    Tag="mono180"/>
+                        <ComboBoxItem Content="180° SBS (左右分割ステレオ)" Tag="sbs180"/>
+                        <ComboBoxItem Content="フラット (2D シアター)"       Tag="flat"/>
+                    </ComboBox>
+                </StackPanel>
+            </Border>
+
+            <!-- ── 再生コントロール ───────────────────────────── -->
+            <Border Style="{StaticResource Panel}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource PanelTitle}" Text="再生"/>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button x:Name="PlayBtn"   Content="▶ 再生"    Style="{StaticResource Btn}"
+                                Click="Play_Click"  IsEnabled="False" Margin="0,0,6,0"/>
+                        <Button x:Name="PauseBtn"  Content="⏸ 停止"   Style="{StaticResource BtnSec}"
+                                Click="Pause_Click" IsEnabled="False" Margin="0,0,6,0"/>
+                        <Button x:Name="OpenVRBtn" Content="VRウィンドウを開く" Style="{StaticResource Btn}"
+                                Click="OpenVRWindow_Click" IsEnabled="False" Margin="0,0,6,0"/>
+                        <Button x:Name="CloseVRBtn" Content="閉じる" Style="{StaticResource BtnDanger}"
+                                Click="CloseVRWindow_Click" IsEnabled="False"/>
+                    </StackPanel>
+
+                    <Slider x:Name="SeekSlider" Minimum="0" Maximum="1000" Value="0"
+                            IsEnabled="False" Foreground="{StaticResource Accent}"
+                            Margin="0,0,0,4"
+                            PreviewMouseDown="Seek_MouseDown"
+                            PreviewMouseUp="Seek_MouseUp"
+                            ValueChanged="Seek_ValueChanged"/>
+
+                    <DockPanel>
+                        <TextBlock x:Name="TimeLabel" DockPanel.Dock="Left"
+                                   Text="0:00 / 0:00" Foreground="{StaticResource TextDim}" FontSize="11"/>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <TextBlock Text="音量:" Foreground="{StaticResource TextDim}" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <Slider x:Name="VolumeSlider" Minimum="0" Maximum="100" Value="100" Width="80"
+                                    Foreground="{StaticResource Accent}"
+                                    ValueChanged="Volume_Changed"/>
+                        </StackPanel>
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ── The Handy ──────────────────────────────────── -->
+            <Border Style="{StaticResource Panel}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource PanelTitle}" Text="The Handy"/>
+
+                    <TextBlock Style="{StaticResource Label}" Text="接続キー (Connection Key)"/>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <PasswordBox x:Name="HandyKeyBox" PasswordChar="•" Grid.Column="0"/>
+                        <Button Grid.Column="1" Content="👁" Style="{StaticResource BtnSec}"
+                                Margin="6,0,4,0" Padding="10,6" Click="ToggleKey_Click"/>
+                        <Button Grid.Column="2" x:Name="HandyConnectBtn" Content="接続"
+                                Style="{StaticResource Btn}" Padding="12,6" Click="HandyConnect_Click"/>
+                    </Grid>
+
+                    <DockPanel Margin="0,0,0,6">
+                        <Ellipse x:Name="HandyDot" Width="8" Height="8" Fill="{StaticResource TextDim}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="HandyStatus" Text="未接続" Foreground="{StaticResource TextDim}" FontSize="12"/>
+                    </DockPanel>
+
+                    <TextBlock x:Name="HandySyncLabel" Text="" Foreground="{StaticResource TextDim}" FontSize="11" Margin="0,0,0,6"/>
+                </StackPanel>
+            </Border>
+
+            <!-- ── Funscript ──────────────────────────────────── -->
+            <Border Style="{StaticResource Panel}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource PanelTitle}" Text="Funscript"/>
+
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="ScriptPathBox" IsReadOnly="True" Text="(未選択)"
+                                 Foreground="{StaticResource TextDim}"/>
+                        <Button Grid.Column="1" Content="開く" Style="{StaticResource BtnSec}"
+                                Margin="6,0,0,0" Padding="12,6" Click="ScriptBrowse_Click"/>
+                    </Grid>
+
+                    <TextBlock x:Name="ScriptInfo" Text="" Foreground="{StaticResource TextDim}" FontSize="11" Margin="0,0,0,6"/>
+
+                    <Button x:Name="HandyUploadBtn" Content="Funscriptをアップロード &amp; 準備"
+                            Style="{StaticResource Btn}" IsEnabled="False" Click="HandyUpload_Click"
+                            HorizontalAlignment="Stretch"/>
+                    <TextBlock x:Name="HandyUploadStatus" Text="" Foreground="{StaticResource TextDim}" FontSize="11" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- ── ログ ────────────────────────────────────────── -->
+            <Border Style="{StaticResource Panel}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource PanelTitle}" Text="ログ"/>
+                    <TextBox x:Name="LogBox" IsReadOnly="True" Height="100"
+                             Background="{StaticResource Bg}" Foreground="{StaticResource TextDim}"
+                             FontSize="11" FontFamily="Consolas" TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto" AcceptsReturn="True"/>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</Window>

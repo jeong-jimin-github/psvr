@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>PSVRPlayer</AssemblyName>
+    <RootNamespace>PSVRPlayer</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- OpenGL / Windowing (replaces GLFW+GLEW used in PSVRFramework C++ side) -->
+    <PackageReference Include="OpenTK" Version="4.8.2" />
+
+    <!-- PSVR HID access without WinUSB driver (sensor + control interfaces) -->
+    <PackageReference Include="HidSharp" Version="2.1.0" />
+
+    <!-- Video decode (replaces VLC in PSVRFramework's VRVideoPlayer) -->
+    <PackageReference Include="LibVLCSharp" Version="3.9.2" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.21" />
+  </ItemGroup>
+
+</Project>
