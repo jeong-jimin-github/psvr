@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PSVR PC Video Player</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0d0f;
+      --surface: #1a1a1f;
+      --surface2: #242429;
+      --border: #2e2e38;
+      --accent: #6c63ff;
+      --accent-hover: #7e76ff;
+      --text: #e8e8f0;
+      --text-dim: #8888aa;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      overflow: hidden;
+    }
+
+    #app {
+      display: grid;
+      grid-template-rows: 48px 1fr 72px;
+      grid-template-columns: 300px 1fr;
+      height: 100vh;
+    }
+
+    /* ── Header ─────────────────────────── */
+    #header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+
+    #header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    #header .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: var(--accent);
+      color: #fff;
+    }
+
+    #header .spacer { flex: 1; }
+
+    #vr-button-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ── Sidebar ─────────────────────────── */
+    #sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .panel {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .panel-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+
+    input[type="text"], input[type="password"], select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 7px 10px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus, input[type="password"]:focus, select:focus {
+      border-color: var(--accent);
+    }
+
+    select option { background: var(--surface2); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+
+    .btn-secondary {
+      background: var(--border);
+      color: var(--text);
+    }
+    .btn-secondary:hover { background: #3a3a48; }
+
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      flex-shrink: 0;
+    }
+    .status-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .status-dot.error { background: var(--red); }
+    .status-dot.syncing { background: var(--yellow); animation: pulse 1s infinite; }
+
+    @keyframes pulse { 50% { opacity: 0.4; } }
+
+    .status-text { font-size: 12px; color: var(--text-dim); }
+    .status-text.ok { color: var(--green); }
+    .status-text.err { color: var(--red); }
+
+    .file-drop {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.15s;
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+    .file-drop:hover, .file-drop.over { border-color: var(--accent); color: var(--accent); }
+    .file-drop .icon { font-size: 20px; margin-bottom: 4px; }
+
+    .file-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      background: var(--bg);
+      border-radius: 6px;
+      font-size: 12px;
+      margin-top: 6px;
+    }
+    .file-info .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-info .clear { cursor: pointer; color: var(--text-dim); font-size: 16px; line-height: 1; }
+    .file-info .clear:hover { color: var(--red); }
+
+    .setup-steps {
+      font-size: 11px;
+      color: var(--text-dim);
+      line-height: 1.7;
+    }
+    .setup-steps ol { padding-left: 16px; }
+    .setup-steps a { color: var(--accent); text-decoration: none; }
+
+    /* ── Canvas ─────────────────────────── */
+    #canvas-container {
+      position: relative;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #canvas-container canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    #no-video-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--text-dim);
+      pointer-events: none;
+    }
+    #no-video-overlay .big-icon { font-size: 48px; }
+
+    #vr-btn-overlay {
+      position: absolute;
+      bottom: 16px;
+      right: 16px;
+    }
+
+    /* Three.js VR button styling override */
+    #VRButton {
+      position: static !important;
+      margin: 0 !important;
+      padding: 8px 18px !important;
+      font-size: 13px !important;
+      border-radius: 6px !important;
+      background: var(--accent) !important;
+      border: none !important;
+    }
+
+    /* ── Controls bar ─────────────────────── */
+    #controls {
+      grid-column: 1 / -1;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+    }
+
+    .ctrl-btn {
+      background: none;
+      border: none;
+      color: var(--text);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 4px;
+      font-size: 18px;
+      line-height: 1;
+      transition: all 0.1s;
+    }
+    .ctrl-btn:hover { background: var(--border); }
+    .ctrl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    #seek-bar {
+      flex: 1;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: var(--border);
+      border-radius: 99px;
+      cursor: pointer;
+      outline: none;
+    }
+    #seek-bar::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    #seek-bar::-webkit-slider-thumb:hover { transform: scale(1.3); }
+
+    .time-display {
+      font-size: 12px;
+      color: var(--text-dim);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    #volume-bar {
+      width: 70px;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: var(--border);
+      border-radius: 99px;
+      cursor: pointer;
+      outline: none;
+    }
+    #volume-bar::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--text);
+      cursor: pointer;
+    }
+
+    .handy-status-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-dim);
+      padding: 0 8px;
+      border-left: 1px solid var(--border);
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* Hidden video element */
+    #video { display: none; }
+  </style>
+</head>
+<body>
+
+<video id="video" crossorigin="anonymous" playsinline></video>
+
+<div id="app">
+  <!-- Header -->
+  <header id="header">
+    <h1>PSVR Video Player</h1>
+    <span class="badge">PC</span>
+    <div class="spacer"></div>
+    <div id="vr-button-container"></div>
+  </header>
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+
+    <!-- Video File -->
+    <div class="panel">
+      <div class="panel-title">動画ファイル</div>
+      <div id="video-drop" class="file-drop" tabindex="0">
+        <div class="icon">🎬</div>
+        <div>クリックまたはドロップで動画を読み込む</div>
+        <div style="margin-top:4px;font-size:11px">MP4 / MKV / WebM</div>
+      </div>
+      <div id="video-file-info" class="file-info" style="display:none">
+        <span>🎬</span>
+        <span class="name" id="video-filename"></span>
+        <span class="clear" id="video-clear" title="削除">×</span>
+      </div>
+      <input type="file" id="video-input" accept="video/*" style="display:none">
+
+      <div style="margin-top:10px">
+        <label>映像フォーマット</label>
+        <select id="format-select">
+          <option value="mono360">360° Mono (等長方形)</option>
+          <option value="sbs360">360° SBS (左右分割ステレオ)</option>
+          <option value="tb360">360° TB (上下分割ステレオ)</option>
+          <option value="mono180">180° Mono</option>
+          <option value="sbs180">180° SBS (左右分割ステレオ)</option>
+          <option value="flat">フラット (2D シアター)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Funscript -->
+    <div class="panel">
+      <div class="panel-title">Funscript</div>
+      <div id="script-drop" class="file-drop" tabindex="0">
+        <div class="icon">📄</div>
+        <div>Funscriptをドロップ</div>
+        <div style="margin-top:4px;font-size:11px">.funscript</div>
+      </div>
+      <div id="script-file-info" class="file-info" style="display:none">
+        <span>📄</span>
+        <span class="name" id="script-filename"></span>
+        <span class="clear" id="script-clear" title="削除">×</span>
+      </div>
+      <input type="file" id="script-input" accept=".funscript,.json" style="display:none">
+      <div id="script-status" class="row" style="display:none">
+        <div class="status-dot" id="script-status-dot"></div>
+        <span class="status-text" id="script-status-text"></span>
+      </div>
+    </div>
+
+    <!-- The Handy -->
+    <div class="panel">
+      <div class="panel-title">The Handy</div>
+      <label>接続キー (Connection Key)</label>
+      <div style="display:flex;gap:6px">
+        <input type="password" id="handy-key" placeholder="xxxx-xxxx-xxxx" autocomplete="off">
+        <button class="btn btn-secondary btn-sm" id="handy-toggle-key" title="表示/非表示">👁</button>
+      </div>
+      <div class="row">
+        <div class="status-dot" id="handy-dot"></div>
+        <span class="status-text" id="handy-status">未接続</span>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn btn-primary btn-sm" id="handy-connect-btn">接続</button>
+      </div>
+      <div id="handy-sync-row" class="row" style="display:none">
+        <div class="status-dot syncing" id="handy-sync-dot" style="display:none"></div>
+        <span class="status-text" id="handy-sync-status"></span>
+      </div>
+      <div id="handy-upload-row" class="row" style="display:none">
+        <button class="btn btn-secondary btn-sm" id="handy-upload-btn" style="width:100%">
+          Funscriptをアップロード & 準備
+        </button>
+      </div>
+    </div>
+
+    <!-- PSVR Setup Guide -->
+    <div class="panel">
+      <div class="panel-title">PSVRセットアップ</div>
+      <div class="setup-steps">
+        <ol>
+          <li>PSVR付属のプロセッサーユニットをPCに接続</li>
+          <li>HDMIとUSBケーブルをPCへ</li>
+          <li><a href="https://store.steampowered.com/app/1897250/iVRy_Driver_for_SteamVR/" target="_blank">iVRy</a> または Trinus PSVR をインストール</li>
+          <li>SteamVR を起動してPSVRを認識させる</li>
+          <li>Chrome/Edge で「VRに入る」ボタンをクリック</li>
+        </ol>
+        <div style="margin-top:8px;padding:8px;background:var(--bg);border-radius:6px">
+          WebXR対応ブラウザが必要です。<br>
+          Chrome または Edge を使用してください。
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- Canvas -->
+  <main id="canvas-container">
+    <div id="no-video-overlay">
+      <div class="big-icon">🥽</div>
+      <div>動画ファイルを読み込んでください</div>
+    </div>
+    <div id="vr-btn-overlay"></div>
+  </main>
+
+  <!-- Controls bar -->
+  <div id="controls">
+    <button class="ctrl-btn" id="play-btn" disabled title="再生 / 一時停止">▶</button>
+    <span class="time-display" id="time-current">0:00</span>
+    <input type="range" id="seek-bar" min="0" max="1000" value="0" step="1" disabled>
+    <span class="time-display" id="time-total">0:00</span>
+    <button class="ctrl-btn" id="mute-btn" title="ミュート">🔊</button>
+    <input type="range" id="volume-bar" min="0" max="100" value="100" step="1">
+
+    <div class="handy-status-bar">
+      <div class="status-dot" id="ctrl-handy-dot"></div>
+      <span id="ctrl-handy-label">The Handy: 未接続</span>
+    </div>
+  </div>
+
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
