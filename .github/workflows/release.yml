@@ -30,12 +30,11 @@ jobs:
         run: |
           $date = Get-Date -Format 'yyyy.MM.dd'
           $tag  = "v$date"
-          "tag=$tag"                             >> $env:GITHUB_OUTPUT
-          "win_zip=PSVRPlayer-Windows-$tag.zip"  >> $env:GITHUB_OUTPUT
-          "web_zip=PSVRPlayer-Web-$tag.zip"      >> $env:GITHUB_OUTPUT
+          "tag=$tag"                            >> $env:GITHUB_OUTPUT
+          "win_zip=PSVRPlayer-Windows-$tag.zip" >> $env:GITHUB_OUTPUT
           Write-Host "Release tag: $tag"
 
-      # ── .NET build (WPF + OpenGL, Windows x64) ────────────────────────────
+      # ── .NET 8 build (WPF + OpenGL, win-x64 self-contained) ─────────────
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
@@ -56,37 +55,16 @@ jobs:
             -p:DebugSymbols=false `
             --output ./publish/app
 
-      - name: Zip desktop app
+      - name: Zip artifact
         shell: pwsh
         run: |
           Compress-Archive `
-            -Path   "./publish/app/*" `
+            -Path            "./publish/app/*" `
             -DestinationPath "./${{ steps.tag.outputs.win_zip }}"
-          Write-Host "Desktop zip: ${{ steps.tag.outputs.win_zip }}"
-
-      # ── Node / Vite build (web fallback) ──────────────────────────────────
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - name: Install npm deps
-        run: npm ci
-
-      - name: Build web app
-        run: npm run build
-
-      - name: Zip web app
-        shell: pwsh
-        run: |
-          Compress-Archive `
-            -Path   "./dist/*" `
-            -DestinationPath "./${{ steps.tag.outputs.web_zip }}"
-          Write-Host "Web zip: ${{ steps.tag.outputs.web_zip }}"
+          Write-Host "Created: ${{ steps.tag.outputs.win_zip }}"
 
       # ── Release ───────────────────────────────────────────────────────────
-      # 同日に再ビルドした場合は既存リリース+タグを削除して上書き
+      # 同日再ビルド時は既存リリース+タグを削除して上書き
       - name: Remove existing release / tag (same-day rebuild)
         shell: bash
         continue-on-error: true
@@ -107,9 +85,8 @@ jobs:
             | ファイル | 説明 |
             |---|---|
             | `PSVRPlayer-Windows-*.zip` | **Windows ネイティブ版** — .NET 8 WPF + OpenGL、**SteamVR不要** |
-            | `PSVRPlayer-Web-*.zip` | **ブラウザ版** — SteamVR / iVRy 経由 WebXR |
 
-            ### Windows 版セットアップ
+            ### セットアップ
             1. `PSVRPlayer-Windows-*.zip` を展開
             2. PSVR を PC に **USB + HDMI** 接続
             3. `PSVRPlayer.exe` を起動
@@ -123,8 +100,6 @@ jobs:
 
             ### 映像フォーマット対応
             360° Mono / SBS / TB、180° Mono / SBS、フラット（2D シアター）
-          files: |
-            ./${{ steps.tag.outputs.win_zip }}
-            ./${{ steps.tag.outputs.web_zip }}
+          files: ./${{ steps.tag.outputs.win_zip }}
           make_latest: true
           generate_release_notes: false
