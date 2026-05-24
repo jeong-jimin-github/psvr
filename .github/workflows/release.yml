@@ -2,7 +2,9 @@ name: Build & Release
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "claude/**"
   workflow_dispatch:
 
 permissions:
@@ -63,9 +65,10 @@ jobs:
             -DestinationPath "./${{ steps.tag.outputs.win_zip }}"
           Write-Host "Created: ${{ steps.tag.outputs.win_zip }}"
 
-      # ── Release ───────────────────────────────────────────────────────────
+      # ── Release (main branch only) ────────────────────────────────────────
       # 同日再ビルド時は既存リリース+タグを削除して上書き
       - name: Remove existing release / tag (same-day rebuild)
+        if: github.ref == 'refs/heads/main'
         shell: bash
         continue-on-error: true
         env:
@@ -75,6 +78,7 @@ jobs:
           git push --delete origin "${{ steps.tag.outputs.tag }}" 2>/dev/null || true
 
       - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
