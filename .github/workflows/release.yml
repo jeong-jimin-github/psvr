@@ -1,0 +1,130 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      # ── Checkout ─────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── Date-based tag ────────────────────────────────────────────────────
+      - name: Compute date tag
+        id: tag
+        shell: pwsh
+        run: |
+          $date = Get-Date -Format 'yyyy.MM.dd'
+          $tag  = "v$date"
+          "tag=$tag"                             >> $env:GITHUB_OUTPUT
+          "win_zip=PSVRPlayer-Windows-$tag.zip"  >> $env:GITHUB_OUTPUT
+          "web_zip=PSVRPlayer-Web-$tag.zip"      >> $env:GITHUB_OUTPUT
+          Write-Host "Release tag: $tag"
+
+      # ── .NET build (WPF + OpenGL, Windows x64) ────────────────────────────
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore NuGet packages
+        run: dotnet restore PSVRPlayer/PSVRPlayer.csproj -r win-x64
+
+      - name: Publish (win-x64 self-contained)
+        shell: pwsh
+        run: |
+          dotnet publish PSVRPlayer/PSVRPlayer.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            -p:PublishReadyToRun=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            --output ./publish/app
+
+      - name: Zip desktop app
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path   "./publish/app/*" `
+            -DestinationPath "./${{ steps.tag.outputs.win_zip }}"
+          Write-Host "Desktop zip: ${{ steps.tag.outputs.win_zip }}"
+
+      # ── Node / Vite build (web fallback) ──────────────────────────────────
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Zip web app
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path   "./dist/*" `
+            -DestinationPath "./${{ steps.tag.outputs.web_zip }}"
+          Write-Host "Web zip: ${{ steps.tag.outputs.web_zip }}"
+
+      # ── Release ───────────────────────────────────────────────────────────
+      # 同日に再ビルドした場合は既存リリース+タグを削除して上書き
+      - name: Remove existing release / tag (same-day rebuild)
+        shell: bash
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "${{ steps.tag.outputs.tag }}" --yes 2>/dev/null || true
+          git push --delete origin "${{ steps.tag.outputs.tag }}" 2>/dev/null || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "PSVR Player ${{ steps.tag.outputs.tag }}"
+          body: |
+            ## PSVR PC Video Player ${{ steps.tag.outputs.tag }}
+
+            | ファイル | 説明 |
+            |---|---|
+            | `PSVRPlayer-Windows-*.zip` | **Windows ネイティブ版** — .NET 8 WPF + OpenGL、**SteamVR不要** |
+            | `PSVRPlayer-Web-*.zip` | **ブラウザ版** — SteamVR / iVRy 経由 WebXR |
+
+            ### Windows 版セットアップ
+            1. `PSVRPlayer-Windows-*.zip` を展開
+            2. PSVR を PC に **USB + HDMI** 接続
+            3. `PSVRPlayer.exe` を起動
+            4. 「PSVR接続」→「VRモード開始」→「VRウィンドウを開く」
+
+            ### The Handy + Funscript
+            1. The Handy 接続キーを入力して「接続」（30回タイムシンク自動実行）
+            2. `.funscript` ファイルを読み込む
+            3. 「Funscriptをアップロード & 準備」→ Handy CDN にアップ + HSSP設定
+            4. 動画を再生するとデバイスが同期再生
+
+            ### 映像フォーマット対応
+            360° Mono / SBS / TB、180° Mono / SBS、フラット（2D シアター）
+          files: |
+            ./${{ steps.tag.outputs.win_zip }}
+            ./${{ steps.tag.outputs.web_zip }}
+          make_latest: true
+          generate_release_notes: false
