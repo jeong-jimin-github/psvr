@@ -54,8 +54,9 @@ public sealed class PSVRController : IDisposable
     };
 
     // ── State ──────────────────────────────────────────────────────────────
-    private IntPtr _sensorHandle  = IntPtr.Zero;
-    private IntPtr _controlHandle = IntPtr.Zero;
+    private IntPtr  _sensorHandle  = IntPtr.Zero;
+    private IntPtr  _controlHandle = IntPtr.Zero;
+    private string? _controlPath;  // raw path always saved for WinHid fallback
 
     private readonly MadgwickFilter _filter = new();
     private Quaternion _orientation  = Quaternion.Identity;
@@ -110,9 +111,12 @@ public sealed class PSVRController : IDisposable
                 }
                 else if (iface == 5 && path != null && _controlHandle == IntPtr.Zero)
                 {
+                    _controlPath   = path; // always save — used by WinHid fallback
                     _controlHandle = HidApi.hid_open_path(path);
                     if (_controlHandle == IntPtr.Zero)
                         sb.AppendLine($"  ⚠ IF5 open failed: {HidApi.GetError()}");
+                    // Note: hidapi may return non-null but read-only handle (silent fallback).
+                    // TrySendControl will detect write failure and retry via WinHid.
                 }
             }
             HidApi.hid_free_enumeration(devs);
@@ -154,7 +158,7 @@ public sealed class PSVRController : IDisposable
     public void Disconnect()
     {
         _cts?.Cancel();
-        if (_isVRMode) TrySendControl(CmdExitVR);
+        if (_isVRMode) TrySendControlSilent(CmdExitVR);
 
         if (_sensorHandle  != IntPtr.Zero) { HidApi.hid_close(_sensorHandle);  _sensorHandle  = IntPtr.Zero; }
         if (_controlHandle != IntPtr.Zero) { HidApi.hid_close(_controlHandle); _controlHandle = IntPtr.Zero; }
@@ -169,7 +173,10 @@ public sealed class PSVRController : IDisposable
     public bool EnterVRMode()
     {
         if (!IsConnected) return false;
-        if (TrySendControl(CmdHeadsetOn) && TrySendControl(CmdEnableTracking) && TrySendControl(CmdEnterVR))
+        string? ctrlError = null;
+        if (TrySendControl(CmdHeadsetOn,   ref ctrlError) &&
+            TrySendControl(CmdEnableTracking, ref ctrlError) &&
+            TrySendControl(CmdEnterVR,      ref ctrlError))
         {
             _isVRMode = true;
             _filter.Reset();
@@ -178,8 +185,7 @@ public sealed class PSVRController : IDisposable
         }
         StatusChanged?.Invoke(
             "⚠ VRモードコマンド送信不可\n" +
-            "IF5 (コントロール) を管理者権限なしでは開けません。\n" +
-            "右クリック → 管理者として実行 で再起動してください。");
+            $"詳細: {ctrlError ?? "不明なエラー"}");
         _isVRMode = true;
         return true;
     }
@@ -187,7 +193,8 @@ public sealed class PSVRController : IDisposable
     public bool ExitVRMode()
     {
         if (!IsConnected) return false;
-        TrySendControl(CmdExitVR);
+        string? _ = null;
+        TrySendControl(CmdExitVR, ref _);
         _isVRMode = false;
         StatusChanged?.Invoke("シネマモードに戻りました");
         return true;
@@ -255,18 +262,38 @@ public sealed class PSVRController : IDisposable
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
-    private bool TrySendControl(byte[] cmd)
+    // Also update the call in Disconnect which doesn't need error tracking
+    private void TrySendControlSilent(byte[] cmd)
     {
-        if (_controlHandle == IntPtr.Zero) return false;
-        try
+        string? _ = null;
+        TrySendControl(cmd, ref _);
+    }
+
+    private bool TrySendControl(byte[] cmd, ref string? lastError)
+    {
+        // HID output report: first byte = report ID (0x00 for non-numbered reports)
+        var report = new byte[cmd.Length + 1];
+        report[0] = 0x00;
+        Buffer.BlockCopy(cmd, 0, report, 1, cmd.Length);
+
+        // Primary: hidapi handle (may be read-only — hid_write returns -1 in that case)
+        if (_controlHandle != IntPtr.Zero &&
+            HidApi.hid_write(_controlHandle, report, (UIntPtr)report.Length) >= 0)
+            return true;
+
+        // Fallback: Windows native HidD_SetOutputReport (synchronous, no overlapped IO).
+        // Takes a different kernel path and may succeed where hidapi's WriteFile does not.
+        if (_controlPath != null)
         {
-            // hidapi requires report ID as first byte; PSVR uses non-numbered output reports (ID=0x00)
-            var report = new byte[cmd.Length + 1];
-            report[0] = 0x00;
-            Buffer.BlockCopy(cmd, 0, report, 1, cmd.Length);
-            return HidApi.hid_write(_controlHandle, report, (UIntPtr)report.Length) >= 0;
+            var (ok, err) = WinHid.SendOutputReport(_controlPath, report);
+            if (ok) return true;
+            lastError = err;
         }
-        catch { return false; }
+        else
+        {
+            lastError = "コントロールインターフェースが見つかりません";
+        }
+        return false;
     }
 
     private static short ToInt16(byte[] d, int offset) =>
