@@ -40,17 +40,21 @@ public sealed class PSVRController : IDisposable
     private const float AccelScale = 6.1035e-5f;  // g per LSB
 
     // ── HID command payloads (prefix 0x00 report-ID is added in TrySendControl) ──
+    // Format (from OpenHMD psvr.c / PSVRFramework): [id, 0x00, 0xAA, payloadLen, ...payload]
+    //   byte[2] = 0xAA magic marker (required — headset ignores reports without it)
+    //   byte[3] = payload length in bytes
     private static readonly byte[] CmdEnterVR = {
-        0x23, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00   // 0x01 = VR mode
+        0x23, 0x00, 0xAA, 0x04, 0x01, 0x00, 0x00, 0x00   // 0x01 = VR mode
     };
     private static readonly byte[] CmdExitVR = {
-        0x23, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00   // 0x00 = cinema mode
+        0x23, 0x00, 0xAA, 0x04, 0x00, 0x00, 0x00, 0x00   // 0x00 = cinema mode
     };
     private static readonly byte[] CmdEnableTracking = {
-        0x11, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x00   // flags 0xFFFFFF00
+        0x11, 0x00, 0xAA, 0x08, 0xFF, 0xFF, 0xFF, 0x00,  // flags 0xFFFFFF00
+        0x00, 0x00, 0x00, 0x00
     };
     private static readonly byte[] CmdHeadsetOn = {
-        0x17, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00
+        0x17, 0x00, 0xAA, 0x04, 0x01, 0x00, 0x00, 0x00
     };
 
     // ── State ──────────────────────────────────────────────────────────────
@@ -262,7 +266,6 @@ public sealed class PSVRController : IDisposable
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
-    // Also update the call in Disconnect which doesn't need error tracking
     private void TrySendControlSilent(byte[] cmd)
     {
         string? _ = null;
