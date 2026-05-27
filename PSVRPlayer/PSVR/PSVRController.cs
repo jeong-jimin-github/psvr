@@ -1,40 +1,29 @@
 using System;
-using System.Linq;
 using System.Numerics;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using HidSharp;
 
 namespace PSVRPlayer.PSVR;
 
 /// <summary>
-/// Direct PSVR USB-HID controller, equivalent to PSVRFramework's PSVR.cs.
+/// Direct PSVR USB-HID controller using hidapi (same approach as OpenHMD / PSVRFramework).
 ///
-/// USB IDs (Sony PSVR):  VID=0x054C  PID=0x09AF
-///   mi_04 → Sensor HID (reads 64-byte IMU reports)
-///   mi_05 → Control HID (writes VR-mode commands)
+/// USB IDs:  VID=0x054C  PID=0x09AF
+///   interface 4 → Sensor HID (reads 64-byte IMU reports)
+///   interface 5 → Control HID (writes VR-mode commands)
 ///
-/// No SteamVR, no WinUSB driver required — Windows HID class driver is enough.
+/// Requires hidapi.dll (x64) in the application folder.
+/// Download: https://github.com/libusb/hidapi/releases → hidapi-win.zip → x64/hidapi.dll
 ///
 /// Sensor byte layout (64-byte Report 0x01, from PSVRFramework/BMI055Integrator):
 ///   [0]      Report ID (0x01)
 ///   [1]      Status flags
 ///   [2]      Sequence counter
-///   [3-11]   Button / proximity bytes  (proximity uint16 at [8-9])
-///   [12-13]  Gyro Yaw 1   (int16 LE)
-///   [14-15]  Gyro Pitch 1 (int16 LE)
-///   [16-17]  Gyro Roll 1  (int16 LE)
-///   [18-19]  Accel X 1    (int16 LE)
-///   [20-21]  Accel Y 1    (int16 LE)
-///   [22-23]  Accel Z 1    (int16 LE)
-///   [24-27]  Timestamp1   (uint32 LE, µs)
-///   [28-29]  Gyro Yaw 2   (int16 LE)
-///   [30-31]  Gyro Pitch 2 (int16 LE)
-///   [32-33]  Gyro Roll 2  (int16 LE)
-///   [34-35]  Accel X 2    (int16 LE)
-///   [36-37]  Accel Y 2    (int16 LE)
-///   [38-39]  Accel Z 2    (int16 LE)
-///   [40-43]  Timestamp2   (uint32 LE, µs)
+///   [12-23]  Sample 1: Gyro YPR + Accel XYZ (int16 LE × 6)
+///   [24-27]  Timestamp1 (uint32 LE, µs)
+///   [28-39]  Sample 2: Gyro YPR + Accel XYZ (int16 LE × 6)
+///   [40-43]  Timestamp2 (uint32 LE, µs)
 ///
 /// Scale factors (BMI055 at ±2000 DPS / ±2 G):
 ///   Gyro  = raw × 0.001065 rad/s
@@ -43,53 +32,41 @@ namespace PSVRPlayer.PSVR;
 public sealed class PSVRController : IDisposable
 {
     // ── USB identifiers ────────────────────────────────────────────────────
-    private const int VendorId  = 0x054C;
-    private const int ProductId = 0x09AF;
+    private const ushort VendorId  = 0x054C;
+    private const ushort ProductId = 0x09AF;
 
     // IMU scale factors
-    private const float GyroScale  = 0.001065f;   // rad/s per LSB (2000 DPS / 32768 * π/180)
-    private const float AccelScale = 6.1035e-5f;  // g per LSB (2G / 32768)
+    private const float GyroScale  = 0.001065f;   // rad/s per LSB
+    private const float AccelScale = 6.1035e-5f;  // g per LSB
 
-    // ── HID command IDs (from PSVRFramework wiki / source) ─────────────────
-    // Report 0x11: Enable VR Tracking  (flags 0xFFFFFF00)
-    // Report 0x23: Enter/Exit VR Mode  (0x01 = VR, 0x00 = Cinema)
-    // Report 0x17: Headset power       (0x01 = on)
+    // ── HID command payloads (prefix 0x00 report-ID is added in TrySendControl) ──
     private static readonly byte[] CmdEnterVR = {
-        0x23,                                       // Command ID
-        0x00, 0x00, 0x00,
-        0x01,                                       // 1 = VR mode, 0 = cinema mode
-        0x00, 0x00, 0x00
+        0x23, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00   // 0x01 = VR mode
     };
     private static readonly byte[] CmdExitVR = {
-        0x23, 0x00, 0x00, 0x00,
-        0x00,                                       // 0 = cinema mode
-        0x00, 0x00, 0x00
+        0x23, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00   // 0x00 = cinema mode
     };
     private static readonly byte[] CmdEnableTracking = {
-        0x11, 0x00, 0x00, 0x00,
-        0xFF, 0xFF, 0xFF, 0x00                      // flags 0xFFFFFF00 LE
+        0x11, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x00   // flags 0xFFFFFF00
     };
     private static readonly byte[] CmdHeadsetOn = {
-        0x17, 0x00, 0x00, 0x00,
-        0x01, 0x00, 0x00, 0x00
+        0x17, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00
     };
 
     // ── State ──────────────────────────────────────────────────────────────
-    private HidDevice?  _sensorDevice;
-    private HidDevice?  _controlDevice;
-    private HidStream?  _sensorStream;
-    private HidStream?  _controlStream;
+    private IntPtr _sensorHandle  = IntPtr.Zero;
+    private IntPtr _controlHandle = IntPtr.Zero;
 
     private readonly MadgwickFilter _filter = new();
-    private Quaternion _orientation = Quaternion.Identity;
-    private Quaternion _calibOffset = Quaternion.Identity; // set by Recenter()
+    private Quaternion _orientation  = Quaternion.Identity;
+    private Quaternion _calibOffset  = Quaternion.Identity;
     private bool _isVRMode;
     private CancellationTokenSource? _cts;
 
     public bool IsConnected { get; private set; }
     public bool IsVRMode => _isVRMode;
 
-    // Orientation relative to recenter position (Conjugate(savedOrientation) * currentOrientation)
+    /// <summary>Orientation relative to the last Recenter() call.</summary>
     public Quaternion HeadOrientation
     {
         get { lock (_filter) return _calibOffset * _orientation; }
@@ -104,43 +81,43 @@ public sealed class PSVRController : IDisposable
     {
         try
         {
-            var devices = DeviceList.Local.GetHidDevices(VendorId, ProductId).ToList();
-            if (devices.Count == 0)
+            HidApi.hid_init();
+
+            var devs = HidApi.hid_enumerate(VendorId, ProductId);
+            if (devs == IntPtr.Zero)
             {
-                StatusChanged?.Invoke("PSVRが見つかりません (VID=054C PID=09AF)");
+                StatusChanged?.Invoke(
+                    "PSVR未検出 (VID=054C PID=09AF)\n" +
+                    "確認事項:\n" +
+                    "  • PSVRプロセッサーボックスが電源ON・USB接続されているか\n" +
+                    "  • デバイスマネージャーでSONY PSVR (VID_054C&PID_09AF) が見えるか");
                 return false;
             }
 
-            // Interface 4 = sensor (large input reports, no output)
-            // Interface 5 = control (accepts output reports)
-            // Identify by device path containing MI_04 / MI_05
-            _sensorDevice  = devices.FirstOrDefault(d =>
-                d.DevicePath?.IndexOf("MI_04", StringComparison.OrdinalIgnoreCase) >= 0)
-                ?? devices.FirstOrDefault(d => d.GetMaxInputReportLength() >= 64);
-
-            _controlDevice = devices.FirstOrDefault(d =>
-                d.DevicePath?.IndexOf("MI_05", StringComparison.OrdinalIgnoreCase) >= 0)
-                ?? devices.FirstOrDefault(d => d.GetMaxOutputReportLength() >= 8);
-
-            if (_sensorDevice is null)
+            // Walk the hid_device_info linked list; open interface 4 (sensor) and 5 (control)
+            var sb = new StringBuilder("PSVR インターフェース検出:\n");
+            for (var cur = devs; cur != IntPtr.Zero; cur = HidApi.GetNext(cur))
             {
-                StatusChanged?.Invoke("センサーインターフェースが見つかりません");
+                int   iface = HidApi.GetInterfaceNumber(cur);
+                string? path  = HidApi.GetPath(cur);
+                sb.AppendLine($"  IF{iface}: {path}");
+
+                if (iface == 4 && path != null && _sensorHandle == IntPtr.Zero)
+                    _sensorHandle = HidApi.hid_open_path(path);
+                else if (iface == 5 && path != null && _controlHandle == IntPtr.Zero)
+                    _controlHandle = HidApi.hid_open_path(path);
+            }
+            HidApi.hid_free_enumeration(devs);
+
+            StatusChanged?.Invoke(sb.ToString().TrimEnd());
+
+            if (_sensorHandle == IntPtr.Zero)
+            {
+                StatusChanged?.Invoke(
+                    "センサーインターフェース(IF4)を開けませんでした。\n" +
+                    "管理者権限でアプリを再起動してください。");
                 return false;
             }
-
-            if (_sensorDevice.TryOpen(out _sensorStream))
-            {
-                _sensorStream.ReadTimeout  = Timeout.Infinite;
-                _sensorStream.WriteTimeout = 1000;
-            }
-            else
-            {
-                StatusChanged?.Invoke("センサーストリームを開けません (管理者権限が必要な場合あり)");
-                return false;
-            }
-
-            if (_controlDevice is not null)
-                _controlDevice.TryOpen(out _controlStream);
 
             IsConnected = true;
             StatusChanged?.Invoke("PSVR接続完了");
@@ -149,6 +126,15 @@ public sealed class PSVRController : IDisposable
             _ = Task.Run(() => SensorLoop(_cts.Token));
 
             return true;
+        }
+        catch (DllNotFoundException)
+        {
+            StatusChanged?.Invoke(
+                "hidapi.dll が見つかりません。\n" +
+                "https://github.com/libusb/hidapi/releases から\n" +
+                "hidapi-win.zip をダウンロードし、x64/hidapi.dll を\n" +
+                "PSVRPlayer.exe と同じフォルダに置いてください。");
+            return false;
         }
         catch (Exception ex)
         {
@@ -162,10 +148,11 @@ public sealed class PSVRController : IDisposable
         _cts?.Cancel();
         if (_isVRMode) TrySendControl(CmdExitVR);
 
-        _sensorStream?.Dispose();  _sensorStream  = null;
-        _controlStream?.Dispose(); _controlStream = null;
+        if (_sensorHandle  != IntPtr.Zero) { HidApi.hid_close(_sensorHandle);  _sensorHandle  = IntPtr.Zero; }
+        if (_controlHandle != IntPtr.Zero) { HidApi.hid_close(_controlHandle); _controlHandle = IntPtr.Zero; }
+
         IsConnected = false;
-        _isVRMode = false;
+        _isVRMode   = false;
         StatusChanged?.Invoke("切断");
     }
 
@@ -181,9 +168,10 @@ public sealed class PSVRController : IDisposable
             StatusChanged?.Invoke("VRモード開始");
             return true;
         }
-        // Control interface unavailable – video will still render, but no mode switch.
-        StatusChanged?.Invoke("⚠ VRモードコマンド未送信 (コントロールインターフェース不可)。PSVRToolboxで手動でVRモードにしてください。");
-        _isVRMode = true; // attempt anyway
+        StatusChanged?.Invoke(
+            "⚠ VRモードコマンド送信不可 (コントロールIF5なし)\n" +
+            "PSVRToolbox 等で手動でVRモードに切り替えてください。");
+        _isVRMode = true;
         return true;
     }
 
@@ -196,7 +184,7 @@ public sealed class PSVRController : IDisposable
         return true;
     }
 
-    /// <summary>Sets current orientation as the new "forward" reference.</summary>
+    /// <summary>Sets current orientation as the "forward" reference for subsequent HeadOrientation reads.</summary>
     public void Recenter()
     {
         lock (_filter)
@@ -212,9 +200,17 @@ public sealed class PSVRController : IDisposable
         {
             try
             {
-                int read = _sensorStream!.Read(buf, 0, buf.Length);
-                if (read >= 44 && buf[0] == 0x01)
+                // 100 ms timeout lets us check cancellation without busy-spinning
+                int read = HidApi.hid_read_timeout(_sensorHandle, buf, (UIntPtr)buf.Length, 100);
+                if (read > 0 && buf[0] == 0x01 && read >= 44)
                     ParseSensorReport(buf);
+                else if (read < 0)          // device error / disconnect
+                {
+                    IsConnected = false;
+                    Disconnected?.Invoke();
+                    return;
+                }
+                // read == 0: timeout, loop and re-check cancellation
             }
             catch (Exception) when (!ct.IsCancellationRequested)
             {
@@ -227,10 +223,10 @@ public sealed class PSVRController : IDisposable
 
     private void ParseSensorReport(byte[] d)
     {
-        // Two IMU samples per report — process both sequentially
+        // Two IMU samples per report
         for (int i = 0; i < 2; i++)
         {
-            int off = 12 + i * 16; // 12 = start of sample1, each sample = 6×int16 + uint32 = 16 bytes
+            int off = 12 + i * 16;
 
             float gYaw   = ToInt16(d, off + 0)  * GyroScale;
             float gPitch = ToInt16(d, off + 2)  * GyroScale;
@@ -239,8 +235,7 @@ public sealed class PSVRController : IDisposable
             float aY     = ToInt16(d, off + 8)  * AccelScale;
             float aZ     = ToInt16(d, off + 10) * AccelScale;
 
-            // PSVR axis convention → OpenGL/right-hand convention
-            // X = pitch (nod), Y = yaw (shake head), Z = roll (tilt)
+            // PSVR axis → right-hand OpenGL convention
             lock (_filter)
             {
                 _filter.Update(gPitch, gYaw, -gRoll, aX, aY, aZ);
@@ -253,15 +248,14 @@ public sealed class PSVRController : IDisposable
 
     private bool TrySendControl(byte[] cmd)
     {
-        if (_controlStream is null) return false;
+        if (_controlHandle == IntPtr.Zero) return false;
         try
         {
-            // HID output report: prefix with 0x00 (report ID for non-numbered reports)
+            // hidapi requires report ID as first byte; PSVR uses non-numbered output reports (ID=0x00)
             var report = new byte[cmd.Length + 1];
             report[0] = 0x00;
             Buffer.BlockCopy(cmd, 0, report, 1, cmd.Length);
-            _controlStream.Write(report);
-            return true;
+            return HidApi.hid_write(_controlHandle, report, (UIntPtr)report.Length) >= 0;
         }
         catch { return false; }
     }

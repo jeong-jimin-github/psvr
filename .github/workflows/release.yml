@@ -42,6 +42,19 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      # ── hidapi native DLL (same library used by OpenHMD / PSVRFramework) ──
+      - name: Download hidapi.dll (x64)
+        shell: pwsh
+        run: |
+          $url = "https://github.com/libusb/hidapi/releases/download/hidapi-0.14.0/hidapi-win.zip"
+          Invoke-WebRequest -Uri $url -OutFile hidapi-win.zip
+          Expand-Archive -Path hidapi-win.zip -DestinationPath hidapi-win
+          $dll = Get-ChildItem -Path hidapi-win -Recurse -Filter hidapi.dll |
+                   Where-Object { $_.FullName -match 'x64' } |
+                   Select-Object -First 1
+          Copy-Item $dll.FullName -Destination PSVRPlayer\hidapi.dll
+          Write-Host "Copied: $($dll.FullName)"
+
       - name: Restore NuGet packages
         run: dotnet restore PSVRPlayer/PSVRPlayer.csproj -r win-x64
 
