@@ -49,6 +49,16 @@ internal static class HidApi
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     public static extern void hid_close(IntPtr device);
 
+    /// <summary>Returns last error string for the device (or global error if device is IntPtr.Zero). The returned wchar_t* is owned by hidapi — do not free.</summary>
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr hid_error(IntPtr device);
+
+    public static string? GetError(IntPtr device = default)
+    {
+        var ptr = hid_error(device);
+        return ptr == IntPtr.Zero ? null : Marshal.PtrToStringUni(ptr);
+    }
+
     // ── hid_device_info struct field accessors ─────────────────────────────
     // Layout for Windows x64 (verified against hidapi.h + MSVC ABI):
     //   offset  0  : path (char*)           8 bytes

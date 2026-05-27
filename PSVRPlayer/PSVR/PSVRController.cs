@@ -103,9 +103,17 @@ public sealed class PSVRController : IDisposable
                 sb.AppendLine($"  IF{iface}: {path}");
 
                 if (iface == 4 && path != null && _sensorHandle == IntPtr.Zero)
+                {
                     _sensorHandle = HidApi.hid_open_path(path);
+                    if (_sensorHandle == IntPtr.Zero)
+                        sb.AppendLine($"  ⚠ IF4 open failed: {HidApi.GetError()}");
+                }
                 else if (iface == 5 && path != null && _controlHandle == IntPtr.Zero)
+                {
                     _controlHandle = HidApi.hid_open_path(path);
+                    if (_controlHandle == IntPtr.Zero)
+                        sb.AppendLine($"  ⚠ IF5 open failed: {HidApi.GetError()}");
+                }
             }
             HidApi.hid_free_enumeration(devs);
 
@@ -169,8 +177,9 @@ public sealed class PSVRController : IDisposable
             return true;
         }
         StatusChanged?.Invoke(
-            "⚠ VRモードコマンド送信不可 (コントロールIF5なし)\n" +
-            "PSVRToolbox 等で手動でVRモードに切り替えてください。");
+            "⚠ VRモードコマンド送信不可\n" +
+            "IF5 (コントロール) を管理者権限なしでは開けません。\n" +
+            "右クリック → 管理者として実行 で再起動してください。");
         _isVRMode = true;
         return true;
     }

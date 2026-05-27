@@ -10,6 +10,8 @@
     <PlatformTarget>x64</PlatformTarget>
     <AssemblyName>PSVRPlayer</AssemblyName>
     <RootNamespace>PSVRPlayer</RootNamespace>
+    <!-- UAC: require admin so HID IF5 write access is granted by Windows -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>
